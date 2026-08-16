@@ -198,7 +198,30 @@
     const components = [];
     const modelRoot = new THREE.Group();
     let isActive = false;
-    let modelScale = 1;
+
+    // Exploded-view distances in normalized model units. Tune these values only.
+    const explodeOffsets = {
+      pinSkin: new THREE.Vector3(0, 0, 0.95),
+      pin: new THREE.Vector3(0, 0, 0.65),
+      pinPin: new THREE.Vector3(0, 0, 0.38),
+      skinSecuringPin: new THREE.Vector3(0, 0.35, 0.95),
+      pinholder: new THREE.Vector3(0, 0.42, 0),
+      foamHolder: new THREE.Vector3(0, -0.42, 0),
+      phoneMesh: new THREE.Vector3(0, 0, 0.5)
+    };
+
+    function getComponentKey(name) {
+      const baseName = name.replace(/\.\d+$/, '').toLowerCase();
+
+      if (baseName === 'pinskin') return 'pinSkin';
+      if (baseName === 'pinpin') return 'pinPin';
+      if (baseName === 'pin') return 'pin';
+      if (baseName === 'skinsecuringpin') return 'skinSecuringPin';
+      if (baseName === 'pinholder') return 'pinholder';
+      if (baseName === 'foamholder') return 'foamHolder';
+      if (baseName.includes('iphone-16-case')) return 'phoneMesh';
+      return null;
+    }
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -238,7 +261,7 @@
 
         const bounds = new THREE.Box3().setFromObject(loadedModel);
         const size = bounds.getSize(new THREE.Vector3());
-        modelScale = 3.3 / Math.max(size.x, size.y, size.z);
+        const modelScale = 3.3 / Math.max(size.x, size.y, size.z);
         loadedModel.scale.multiplyScalar(modelScale);
         loadedModel.updateMatrixWorld(true);
 
@@ -247,10 +270,6 @@
         loadedModel.position.sub(scaledCenter);
         loadedModel.updateMatrixWorld(true);
 
-        const modelCenter = new THREE.Box3().setFromObject(loadedModel).getCenter(new THREE.Vector3());
-        const worldCenter = new THREE.Vector3();
-        const localDirection = new THREE.Vector3();
-        const parentRotation = new THREE.Quaternion();
         const parentScale = new THREE.Vector3();
         const componentMap = new Map();
 
@@ -260,24 +279,19 @@
           // Names and userData keep every authored GLB component addressable.
           object.userData.componentName = object.name;
           object.userData.componentIndex = components.length;
-          object.geometry.computeBoundingBox();
-          object.geometry.boundingBox.getCenter(worldCenter);
-          object.localToWorld(worldCenter);
-
-          localDirection.copy(worldCenter).sub(modelCenter);
-          if (localDirection.lengthSq() < 0.001) localDirection.set((components.length % 3) - 1, 0.5, 0);
-          localDirection.normalize();
-          object.parent.getWorldQuaternion(parentRotation);
-          localDirection.applyQuaternion(parentRotation.invert());
-
-          const basePosition = object.position.clone();
+          const componentKey = getComponentKey(object.name);
+          const originalPosition = object.position.clone();
+          const localOffset = new THREE.Vector3();
           object.parent.getWorldScale(parentScale);
-          const worldDistance = 0.48 + (components.length % 4) * 0.075;
-          const distance = worldDistance / Math.max(parentScale.x, parentScale.y, parentScale.z);
+
+          if (componentKey) {
+            localOffset.copy(explodeOffsets[componentKey]).divide(parentScale);
+          }
+
           components.push({
             object,
-            basePosition,
-            explodedPosition: basePosition.clone().addScaledVector(localDirection, distance)
+            originalPosition,
+            explodedPosition: originalPosition.clone().add(localOffset)
           });
           componentMap.set(object.name, object);
         });
@@ -323,7 +337,7 @@
 
       for (const component of components) {
         component.object.position.lerp(
-          isActive ? component.explodedPosition : component.basePosition,
+          isActive ? component.explodedPosition : component.originalPosition,
           smoothing
         );
       }
