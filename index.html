@@ -3,10 +3,339 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Totally Guapo</title>
+  <meta name="description" content="A trumpet augmentation that turns an iPhone into part of the instrument.">
+  <title>Trumpet Phone Augmentation — Totally Guapo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f3efe5;
+      --muted: #a9a79f;
+      --accent: #e9b95f;
+      --surface: #11110f;
+      --line: rgba(243, 239, 229, 0.16);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background: #090908;
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .project {
+      position: relative;
+      min-height: 100svh;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 72% 44%, rgba(177, 126, 42, 0.12), transparent 34%),
+        linear-gradient(135deg, #141411 0%, #090908 62%);
+    }
+
+    .project::before {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      content: "";
+      background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: linear-gradient(to right, black, transparent 78%);
+      opacity: 0.15;
+    }
+
+    .project__copy {
+      position: absolute;
+      z-index: 2;
+      top: 50%;
+      left: clamp(1.5rem, 7vw, 7rem);
+      width: min(31rem, calc(100% - 3rem));
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      margin: 0 0 1.25rem;
+      color: var(--accent);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 9ch;
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(3.3rem, 7.5vw, 7.5rem);
+      font-weight: 400;
+      letter-spacing: -0.055em;
+      line-height: 0.86;
+    }
+
+    .intro {
+      max-width: 31rem;
+      margin: 1.75rem 0 0;
+      color: var(--muted);
+      font-size: clamp(0.95rem, 1.3vw, 1.1rem);
+      line-height: 1.65;
+    }
+
+    .viewer {
+      position: absolute;
+      inset: 0;
+      cursor: grab;
+      outline: none;
+      touch-action: pan-y;
+    }
+
+    .viewer:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+
+    .viewer canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .viewer__hint {
+      position: absolute;
+      right: clamp(1.5rem, 4vw, 4rem);
+      bottom: 2rem;
+      z-index: 2;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      pointer-events: none;
+    }
+
+    .viewer__hint::before {
+      display: inline-block;
+      width: 2.5rem;
+      height: 1px;
+      margin: 0 0.75rem 0.25rem 0;
+      background: var(--accent);
+      content: "";
+    }
+
+    .viewer__status {
+      position: absolute;
+      z-index: 3;
+      inset: 50% auto auto 72%;
+      color: var(--muted);
+      font-size: 0.75rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      transform: translate(-50%, -50%);
+      transition: opacity 300ms ease;
+      pointer-events: none;
+    }
+
+    .viewer.is-ready .viewer__status { opacity: 0; }
+
+    @media (max-width: 720px) {
+      .project__copy {
+        top: 2.5rem;
+        transform: none;
+      }
+
+      h1 { font-size: clamp(3rem, 16vw, 5rem); }
+      .intro { max-width: 25rem; }
+      .viewer__status { inset: 67% auto auto 50%; }
+      .viewer__hint { bottom: 1.25rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
 </head>
 <body>
-  <h1>Hello</h1>
-  <p>My website is live.</p>
+  <main>
+    <section class="project" aria-labelledby="project-title">
+      <div class="project__copy">
+        <p class="eyebrow">Physical interface / prototype</p>
+        <h1 id="project-title">Phone meets trumpet.</h1>
+        <p class="intro">A modular augmentation that brings the phone into the instrument—without asking either object to stop being itself.</p>
+      </div>
+
+      <div
+        class="viewer"
+        id="trumpet-viewer"
+        tabindex="0"
+        role="img"
+        aria-label="Interactive 3D model of a trumpet phone augmentation. Hover or focus to separate its components."
+      >
+        <p class="viewer__status" aria-live="polite">Loading model</p>
+      </div>
+      <p class="viewer__hint">Hover to explore</p>
+    </section>
+  </main>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js';
+
+    const viewer = document.querySelector('#trumpet-viewer');
+    const status = viewer.querySelector('.viewer__status');
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 100);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    const clock = new THREE.Clock();
+    const pointer = new THREE.Vector2();
+    const targetPointer = new THREE.Vector2();
+    const components = [];
+    const modelRoot = new THREE.Group();
+    let isActive = false;
+    let modelScale = 1;
+
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    viewer.prepend(renderer.domElement);
+    scene.add(modelRoot);
+
+    scene.add(new THREE.HemisphereLight(0xfff5df, 0x25283a, 2.4));
+    const keyLight = new THREE.DirectionalLight(0xffd99a, 4.5);
+    keyLight.position.set(4, 6, 5);
+    scene.add(keyLight);
+    const rimLight = new THREE.DirectionalLight(0x9db9ff, 3);
+    rimLight.position.set(-5, 1, -4);
+    scene.add(rimLight);
+
+    function resize() {
+      const { width, height } = viewer.getBoundingClientRect();
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+
+      const mobile = width <= 720;
+      camera.position.set(mobile ? 0 : 0.25, mobile ? 0.35 : 0.15, 6.5);
+      camera.setViewOffset(width, height, mobile ? 0 : -width * 0.18, mobile ? -height * 0.15 : 0, width, height);
+      camera.lookAt(0, 0, 0);
+    }
+
+    new ResizeObserver(resize).observe(viewer);
+    resize();
+
+    new GLTFLoader().load(
+      './websiteModel.glb',
+      ({ scene: loadedModel }) => {
+        modelRoot.add(loadedModel);
+        loadedModel.updateMatrixWorld(true);
+
+        const bounds = new THREE.Box3().setFromObject(loadedModel);
+        const size = bounds.getSize(new THREE.Vector3());
+        modelScale = 3.3 / Math.max(size.x, size.y, size.z);
+        loadedModel.scale.multiplyScalar(modelScale);
+        loadedModel.updateMatrixWorld(true);
+
+        // Re-center after scaling so this also works with off-origin exports.
+        const scaledCenter = new THREE.Box3().setFromObject(loadedModel).getCenter(new THREE.Vector3());
+        loadedModel.position.sub(scaledCenter);
+        loadedModel.updateMatrixWorld(true);
+
+        const modelCenter = new THREE.Box3().setFromObject(loadedModel).getCenter(new THREE.Vector3());
+        const worldCenter = new THREE.Vector3();
+        const localDirection = new THREE.Vector3();
+        const parentRotation = new THREE.Quaternion();
+        const parentScale = new THREE.Vector3();
+        const componentMap = new Map();
+
+        loadedModel.traverse((object) => {
+          if (!object.isMesh) return;
+
+          // Names and userData keep every authored GLB component addressable.
+          object.userData.componentName = object.name;
+          object.userData.componentIndex = components.length;
+          object.geometry.computeBoundingBox();
+          object.geometry.boundingBox.getCenter(worldCenter);
+          object.localToWorld(worldCenter);
+
+          localDirection.copy(worldCenter).sub(modelCenter);
+          if (localDirection.lengthSq() < 0.001) localDirection.set((components.length % 3) - 1, 0.5, 0);
+          localDirection.normalize();
+          object.parent.getWorldQuaternion(parentRotation);
+          localDirection.applyQuaternion(parentRotation.invert());
+
+          const basePosition = object.position.clone();
+          object.parent.getWorldScale(parentScale);
+          const worldDistance = 0.48 + (components.length % 4) * 0.075;
+          const distance = worldDistance / Math.max(parentScale.x, parentScale.y, parentScale.z);
+          components.push({
+            object,
+            basePosition,
+            explodedPosition: basePosition.clone().addScaledVector(localDirection, distance)
+          });
+          componentMap.set(object.name, object);
+        });
+
+        // A public lookup for future per-component interactions or annotations.
+        window.trumpetComponents = componentMap;
+
+        viewer.classList.add('is-ready');
+        status.textContent = 'Model loaded';
+      },
+      undefined,
+      (error) => {
+        console.error('Could not load the trumpet model:', error);
+        status.textContent = '3D model unavailable';
+      }
+    );
+
+    function setActive(active) {
+      isActive = active;
+      if (!active) targetPointer.set(0, 0);
+    }
+
+    viewer.addEventListener('pointerenter', () => setActive(true));
+    viewer.addEventListener('pointerleave', () => setActive(false));
+    viewer.addEventListener('focus', () => setActive(true));
+    viewer.addEventListener('blur', () => setActive(false));
+    viewer.addEventListener('pointermove', (event) => {
+      const rect = viewer.getBoundingClientRect();
+      targetPointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+    });
+    viewer.addEventListener('pointerdown', (event) => {
+      if (event.pointerType !== 'mouse') setActive(!isActive);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = Math.min(clock.getDelta(), 0.05);
+      const smoothing = reducedMotion ? 1 : 1 - Math.exp(-delta * 6);
+      pointer.lerp(targetPointer, smoothing);
+
+      for (const component of components) {
+        component.object.position.lerp(
+          isActive ? component.explodedPosition : component.basePosition,
+          smoothing
+        );
+      }
+
+      const targetRotationX = isActive ? pointer.y * 0.09 : 0;
+      const targetRotationY = isActive ? pointer.x * 0.14 : 0;
+      modelRoot.rotation.x = THREE.MathUtils.lerp(modelRoot.rotation.x, targetRotationX, smoothing);
+      modelRoot.rotation.y = THREE.MathUtils.lerp(modelRoot.rotation.y, targetRotationY, smoothing);
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
 </body>
 </html>
