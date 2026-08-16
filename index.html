@@ -217,7 +217,7 @@
     const EXPLODE = {
       pinSkinUp: 0.55,
       pinUp: 0.36,
-      pinPinUp: 0.19,
+      pinPinDistance: 0.19,
       phoneMeshUp: 0.42,
       skinSecuringPinSide: 0.14,
       pinholderSide: 0.14,
@@ -332,6 +332,9 @@
         const normalizedSize = normalizedBounds.getSize(new THREE.Vector3());
         const explosionScale = Math.max(normalizedSize.x, normalizedSize.y, normalizedSize.z);
         const worldUp = new THREE.Vector3(0, 1, 0);
+        const stackDirection = worldUp.clone().normalize();
+        const pinPinDirection = new THREE.Vector3(0, 0, 1).normalize();
+        console.debug('[exploded-view] pinPin normalized world direction', pinPinDirection.toArray());
         let phoneWorldPosition = null;
 
         // Use geometry centers rather than object origins: several authored parts
@@ -363,11 +366,11 @@
             const worldOffset = new THREE.Vector3();
 
             if (componentKey === 'pinSkin') {
-              worldOffset.addScaledVector(worldUp, EXPLODE.pinSkinUp * explosionScale);
+              worldOffset.addScaledVector(stackDirection, EXPLODE.pinSkinUp * explosionScale);
             } else if (componentKey === 'pin') {
-              worldOffset.addScaledVector(worldUp, EXPLODE.pinUp * explosionScale);
+              worldOffset.addScaledVector(stackDirection, EXPLODE.pinUp * explosionScale);
             } else if (componentKey === 'pinPin') {
-              worldOffset.addScaledVector(worldUp, EXPLODE.pinPinUp * explosionScale);
+              worldOffset.addScaledVector(pinPinDirection, EXPLODE.pinPinDistance * explosionScale);
             } else if (componentKey === 'skinSecuringPin') {
               worldOffset.set(
                 -EXPLODE.skinSecuringPinSide * explosionScale,
