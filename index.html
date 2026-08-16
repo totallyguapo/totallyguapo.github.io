@@ -199,16 +199,16 @@
     const modelRoot = new THREE.Group();
     let isActive = false;
 
-    // Exploded-view offsets in loaded-model WORLD SPACE. Tune these values only.
-    // With the current camera, +Y is visually up and +X points toward phoneMesh.
-    const explodeOffsets = {
-      pinSkin: new THREE.Vector3(0, 0.95, 0),
-      pin: new THREE.Vector3(0, 0.65, 0),
-      pinPin: new THREE.Vector3(0, 0.38, 0),
-      skinSecuringPin: new THREE.Vector3(-0.35, 0.95, 0),
-      pinholder: new THREE.Vector3(-0.42, 0, 0),
-      foamHolder: new THREE.Vector3(0.42, 0, 0),
-      phoneMesh: new THREE.Vector3(0, 0.5, 0)
+    // Exploded-view distances as fractions of the normalized model size.
+    // These are applied in WORLD SPACE; with the current camera, +Y is visual up.
+    const EXPLODE = {
+      pinSkinUp: 0.55,
+      pinUp: 0.36,
+      pinPinUp: 0.19,
+      phoneMeshUp: 0.42,
+      skinSecuringPinSide: 0.14,
+      pinholderSide: 0.14,
+      foamHolderTowardPhone: 0.17
     };
 
     function getComponentKey(name) {
@@ -272,6 +272,19 @@
         loadedModel.updateMatrixWorld(true);
 
         const componentMap = new Map();
+        const normalizedBounds = new THREE.Box3().setFromObject(loadedModel);
+        const normalizedSize = normalizedBounds.getSize(new THREE.Vector3());
+        const explosionScale = Math.max(normalizedSize.x, normalizedSize.y, normalizedSize.z);
+        const worldUp = new THREE.Vector3(0, 1, 0);
+        let phoneWorldPosition = null;
+
+        // Use geometry centers rather than object origins: several authored parts
+        // share an origin even though their visible geometry is far apart.
+        loadedModel.traverse((object) => {
+          if (object.isMesh && getComponentKey(object.name) === 'phoneMesh') {
+            phoneWorldPosition = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+          }
+        });
 
         loadedModel.traverse((object) => {
           if (!object.isMesh) return;
@@ -285,7 +298,35 @@
           const explodedPosition = originalPosition.clone();
 
           if (componentKey) {
-            const worldOffset = explodeOffsets[componentKey];
+            const worldOffset = new THREE.Vector3();
+
+            if (componentKey === 'pinSkin') {
+              worldOffset.addScaledVector(worldUp, EXPLODE.pinSkinUp * explosionScale);
+            } else if (componentKey === 'pin') {
+              worldOffset.addScaledVector(worldUp, EXPLODE.pinUp * explosionScale);
+            } else if (componentKey === 'pinPin') {
+              worldOffset.addScaledVector(worldUp, EXPLODE.pinPinUp * explosionScale);
+            } else if (componentKey === 'skinSecuringPin') {
+              worldOffset.set(
+                -EXPLODE.skinSecuringPinSide * explosionScale,
+                EXPLODE.pinSkinUp * explosionScale,
+                0
+              );
+            } else if (componentKey === 'pinholder') {
+              worldOffset.set(-EXPLODE.pinholderSide * explosionScale, 0, 0);
+            } else if (componentKey === 'foamHolder') {
+              const foamWorldPosition = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+              const towardPhone = phoneWorldPosition.clone().sub(foamWorldPosition);
+
+              // Project out world-up so the phone-directed part stays lateral.
+              towardPhone.addScaledVector(worldUp, -towardPhone.dot(worldUp)).normalize();
+              worldOffset
+                .addScaledVector(worldUp, EXPLODE.pinSkinUp * explosionScale)
+                .addScaledVector(towardPhone, EXPLODE.foamHolderTowardPhone * explosionScale);
+            } else if (componentKey === 'phoneMesh') {
+              worldOffset.addScaledVector(worldUp, EXPLODE.phoneMeshUp * explosionScale);
+            }
+
             const explodedWorldPosition = originalWorldPosition.clone().add(worldOffset);
 
             // Convert the desired world-space target through the full parent
