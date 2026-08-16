@@ -198,6 +198,17 @@
     const components = [];
     const modelRoot = new THREE.Group();
     let isActive = false;
+    let explodedBounds = null;
+    let explodedFitScale = 1;
+    const assembledCenter = new THREE.Vector3();
+    const explodedCenter = new THREE.Vector3();
+    const displayedCenter = new THREE.Vector3();
+
+    // Responsive exploded-state framing. Padding is measured per viewport edge.
+    const VIEW_FIT = {
+      padding: 0.13,
+      animationSpeed: 6
+    };
 
     // Exploded-view distances as fractions of the normalized model size.
     // These are applied in WORLD SPACE; with the current camera, +Y is visual up.
@@ -239,6 +250,42 @@
     rimLight.position.set(-5, 1, -4);
     scene.add(rimLight);
 
+    function updateExplodedFitScale() {
+      if (!explodedBounds) return;
+
+      camera.updateMatrixWorld(true);
+      const min = explodedBounds.min;
+      const max = explodedBounds.max;
+      const corners = [];
+
+      for (const x of [min.x, max.x]) {
+        for (const y of [min.y, max.y]) {
+          for (const z of [min.z, max.z]) corners.push(new THREE.Vector3(x, y, z));
+        }
+      }
+
+      // Project the complete exploded box through the actual perspective camera.
+      // Binary search accounts for aspect ratio, view offsets, and box depth.
+      const ndcLimit = 1 - VIEW_FIT.padding * 2;
+      const fitsAtScale = (scale) => corners.every((corner) => {
+        const projected = corner
+          .clone()
+          .sub(explodedCenter)
+          .multiplyScalar(scale)
+          .project(camera);
+        return Math.abs(projected.x) <= ndcLimit && Math.abs(projected.y) <= ndcLimit;
+      });
+
+      let lower = 0;
+      let upper = 1;
+      for (let index = 0; index < 24; index += 1) {
+        const candidate = (lower + upper) / 2;
+        if (fitsAtScale(candidate)) lower = candidate;
+        else upper = candidate;
+      }
+      explodedFitScale = lower;
+    }
+
     function resize() {
       const { width, height } = viewer.getBoundingClientRect();
       renderer.setSize(width, height, false);
@@ -249,6 +296,7 @@
       camera.position.set(mobile ? 0 : 0.25, mobile ? 0.35 : 0.15, 6.5);
       camera.setViewOffset(width, height, mobile ? 0 : -width * 0.18, mobile ? -height * 0.15 : 0, width, height);
       camera.lookAt(0, 0, 0);
+      updateExplodedFitScale();
     }
 
     new ResizeObserver(resize).observe(viewer);
@@ -273,6 +321,8 @@
 
         const componentMap = new Map();
         const normalizedBounds = new THREE.Box3().setFromObject(loadedModel);
+        normalizedBounds.getCenter(assembledCenter);
+        displayedCenter.copy(assembledCenter);
         const normalizedSize = normalizedBounds.getSize(new THREE.Vector3());
         const explosionScale = Math.max(normalizedSize.x, normalizedSize.y, normalizedSize.z);
         const worldUp = new THREE.Vector3(0, 1, 0);
@@ -350,6 +400,20 @@
           componentMap.set(object.name, object);
         });
 
+        // Measure the complete exploded assembly without showing that state.
+        for (const component of components) {
+          component.object.position.copy(component.explodedPosition);
+        }
+        loadedModel.updateMatrixWorld(true);
+        explodedBounds = new THREE.Box3().setFromObject(loadedModel);
+        explodedBounds.getCenter(explodedCenter);
+
+        for (const component of components) {
+          component.object.position.copy(component.originalPosition);
+        }
+        loadedModel.updateMatrixWorld(true);
+        updateExplodedFitScale();
+
         // A public lookup for future per-component interactions or annotations.
         window.trumpetComponents = componentMap;
 
@@ -386,7 +450,7 @@
     function animate() {
       requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.05);
-      const smoothing = reducedMotion ? 1 : 1 - Math.exp(-delta * 6);
+      const smoothing = reducedMotion ? 1 : 1 - Math.exp(-delta * VIEW_FIT.animationSpeed);
       pointer.lerp(targetPointer, smoothing);
 
       for (const component of components) {
@@ -400,6 +464,18 @@
       const targetRotationY = isActive ? pointer.x * 0.14 : 0;
       modelRoot.rotation.x = THREE.MathUtils.lerp(modelRoot.rotation.x, targetRotationX, smoothing);
       modelRoot.rotation.y = THREE.MathUtils.lerp(modelRoot.rotation.y, targetRotationY, smoothing);
+
+      const targetScale = isActive ? explodedFitScale : 1;
+      const uniformScale = THREE.MathUtils.lerp(modelRoot.scale.x, targetScale, smoothing);
+      modelRoot.scale.setScalar(uniformScale);
+      displayedCenter.lerp(isActive ? explodedCenter : assembledCenter, smoothing);
+
+      // Scaling about the measured content center prevents the assembly drifting.
+      modelRoot.position
+        .copy(displayedCenter)
+        .multiplyScalar(uniformScale)
+        .applyQuaternion(modelRoot.quaternion)
+        .negate();
       renderer.render(scene, camera);
     }
 
