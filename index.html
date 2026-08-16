@@ -203,6 +203,8 @@
     const assembledCenter = new THREE.Vector3();
     const explodedCenter = new THREE.Vector3();
     const displayedCenter = new THREE.Vector3();
+    const assembledRotation = new THREE.Quaternion();
+    const explodedRotation = new THREE.Quaternion();
 
     // Responsive exploded-state framing. Padding is measured per viewport edge.
     const VIEW_FIT = {
@@ -219,7 +221,8 @@
       phoneMeshUp: 0.42,
       skinSecuringPinSide: 0.14,
       pinholderSide: 0.14,
-      foamHolderTowardPhone: 0.17
+      foamHolderTowardPhone: 0.17,
+      rotationDegrees: 45
     };
 
     function getComponentKey(name) {
@@ -272,6 +275,7 @@
           .clone()
           .sub(explodedCenter)
           .multiplyScalar(scale)
+          .applyQuaternion(explodedRotation)
           .project(camera);
         return Math.abs(projected.x) <= ndcLimit && Math.abs(projected.y) <= ndcLimit;
       });
@@ -306,6 +310,10 @@
       './websiteModel.glb',
       ({ scene: loadedModel }) => {
         modelRoot.add(loadedModel);
+        assembledRotation.copy(modelRoot.quaternion);
+        explodedRotation
+          .setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(EXPLODE.rotationDegrees))
+          .multiply(assembledRotation);
         loadedModel.updateMatrixWorld(true);
 
         const bounds = new THREE.Box3().setFromObject(loadedModel);
@@ -460,10 +468,7 @@
         );
       }
 
-      const targetRotationX = isActive ? pointer.y * 0.09 : 0;
-      const targetRotationY = isActive ? pointer.x * 0.14 : 0;
-      modelRoot.rotation.x = THREE.MathUtils.lerp(modelRoot.rotation.x, targetRotationX, smoothing);
-      modelRoot.rotation.y = THREE.MathUtils.lerp(modelRoot.rotation.y, targetRotationY, smoothing);
+      modelRoot.quaternion.slerp(isActive ? explodedRotation : assembledRotation, smoothing);
 
       const targetScale = isActive ? explodedFitScale : 1;
       const uniformScale = THREE.MathUtils.lerp(modelRoot.scale.x, targetScale, smoothing);
