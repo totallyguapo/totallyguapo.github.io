@@ -205,6 +205,7 @@
     const displayedCenter = new THREE.Vector3();
     const assembledRotation = new THREE.Quaternion();
     const explodedRotation = new THREE.Quaternion();
+    const phoneVerticalAxisWorld = new THREE.Vector3();
 
     // Responsive exploded-state framing. Padding is measured per viewport edge.
     const VIEW_FIT = {
@@ -222,7 +223,7 @@
       skinSecuringPinSide: 0.14,
       pinholderSide: 0.14,
       foamHolderTowardPhone: 0.17,
-      rotationDegrees: 45
+      yawDegrees: 40
     };
 
     function getComponentKey(name) {
@@ -311,9 +312,7 @@
       ({ scene: loadedModel }) => {
         modelRoot.add(loadedModel);
         assembledRotation.copy(modelRoot.quaternion);
-        explodedRotation
-          .setFromAxisAngle(new THREE.Vector3(0, 0, 1), THREE.MathUtils.degToRad(EXPLODE.rotationDegrees))
-          .multiply(assembledRotation);
+        explodedRotation.copy(assembledRotation);
         loadedModel.updateMatrixWorld(true);
 
         const bounds = new THREE.Box3().setFromObject(loadedModel);
@@ -341,8 +340,28 @@
         loadedModel.traverse((object) => {
           if (object.isMesh && getComponentKey(object.name) === 'phoneMesh') {
             phoneWorldPosition = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+
+            // The phone's longest geometry axis is its portrait/vertical axis.
+            // Transform that direction through the imported GLB hierarchy so the
+            // yaw axis is correct regardless of exporter axis conventions.
+            object.geometry.computeBoundingBox();
+            const phoneSize = object.geometry.boundingBox.getSize(new THREE.Vector3());
+            if (phoneSize.x >= phoneSize.y && phoneSize.x >= phoneSize.z) {
+              phoneVerticalAxisWorld.set(1, 0, 0);
+            } else if (phoneSize.y >= phoneSize.z) {
+              phoneVerticalAxisWorld.set(0, 1, 0);
+            } else {
+              phoneVerticalAxisWorld.set(0, 0, 1);
+            }
+            phoneVerticalAxisWorld.transformDirection(object.matrixWorld);
           }
         });
+
+        // Premultiplication applies the yaw around the detected WORLD axis while
+        // retaining the parent group's exact assembled orientation.
+        explodedRotation
+          .setFromAxisAngle(phoneVerticalAxisWorld, THREE.MathUtils.degToRad(EXPLODE.yawDegrees))
+          .multiply(assembledRotation);
 
         loadedModel.traverse((object) => {
           if (!object.isMesh) return;
