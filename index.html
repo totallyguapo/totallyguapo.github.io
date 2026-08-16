@@ -199,15 +199,16 @@
     const modelRoot = new THREE.Group();
     let isActive = false;
 
-    // Exploded-view distances in normalized model units. Tune these values only.
+    // Exploded-view offsets in loaded-model WORLD SPACE. Tune these values only.
+    // With the current camera, +Y is visually up and +X points toward phoneMesh.
     const explodeOffsets = {
-      pinSkin: new THREE.Vector3(0, 0, 0.95),
-      pin: new THREE.Vector3(0, 0, 0.65),
-      pinPin: new THREE.Vector3(0, 0, 0.38),
-      skinSecuringPin: new THREE.Vector3(0, 0.35, 0.95),
-      pinholder: new THREE.Vector3(0, 0.42, 0),
-      foamHolder: new THREE.Vector3(0, -0.42, 0),
-      phoneMesh: new THREE.Vector3(0, 0, 0.5)
+      pinSkin: new THREE.Vector3(0, 0.95, 0),
+      pin: new THREE.Vector3(0, 0.65, 0),
+      pinPin: new THREE.Vector3(0, 0.38, 0),
+      skinSecuringPin: new THREE.Vector3(-0.35, 0.95, 0),
+      pinholder: new THREE.Vector3(-0.42, 0, 0),
+      foamHolder: new THREE.Vector3(0.42, 0, 0),
+      phoneMesh: new THREE.Vector3(0, 0.5, 0)
     };
 
     function getComponentKey(name) {
@@ -270,7 +271,6 @@
         loadedModel.position.sub(scaledCenter);
         loadedModel.updateMatrixWorld(true);
 
-        const parentScale = new THREE.Vector3();
         const componentMap = new Map();
 
         loadedModel.traverse((object) => {
@@ -281,17 +281,30 @@
           object.userData.componentIndex = components.length;
           const componentKey = getComponentKey(object.name);
           const originalPosition = object.position.clone();
-          const localOffset = new THREE.Vector3();
-          object.parent.getWorldScale(parentScale);
+          const originalWorldPosition = object.getWorldPosition(new THREE.Vector3());
+          const explodedPosition = originalPosition.clone();
 
           if (componentKey) {
-            localOffset.copy(explodeOffsets[componentKey]).divide(parentScale);
+            const worldOffset = explodeOffsets[componentKey];
+            const explodedWorldPosition = originalWorldPosition.clone().add(worldOffset);
+
+            // Convert the desired world-space target through the full parent
+            // transform (including the GLB root quaternion) into local space.
+            explodedPosition.copy(object.parent.worldToLocal(explodedWorldPosition));
+
+            // Temporary diagnostics for verifying the imported coordinate system.
+            console.debug('[exploded-view]', {
+              componentName: object.name,
+              localPosition: originalPosition.toArray(),
+              worldPosition: originalWorldPosition.toArray(),
+              worldExplosionDirection: worldOffset.toArray()
+            });
           }
 
           components.push({
             object,
             originalPosition,
-            explodedPosition: originalPosition.clone().add(localOffset)
+            explodedPosition
           });
           componentMap.set(object.name, object);
         });
