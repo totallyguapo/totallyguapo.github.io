@@ -222,8 +222,19 @@
       skinSecuringPinSide: 0.14,
       pinholderDistance: 0.14,
       foamHolderTowardPhone: 0.17,
+      middleValveUp: 0.05,
+      lastValveUp: 0.10,
+      pinHolderClearance: 0.01,
       yawDegrees: 40
     };
+
+    const MOVING_VALVE_PARTS = new Set([
+      'pin',
+      'pinSkin',
+      'foamHolder',
+      'skinSecuringPin',
+      'pinPin'
+    ]);
 
     function getComponentKey(name) {
       const baseName = name.replace(/\.\d+$/, '').toLowerCase();
@@ -236,6 +247,11 @@
       if (baseName === 'foamholder') return 'foamHolder';
       if (baseName.includes('iphone-16-case')) return 'phoneMesh';
       return null;
+    }
+
+    function getValveIndex(name) {
+      const suffix = name.match(/\.(\d+)$/);
+      return suffix ? Number.parseInt(suffix[1], 10) : 0;
     }
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -334,6 +350,7 @@
         const worldUp = new THREE.Vector3(0, 1, 0);
         const stackDirection = worldUp.clone().normalize();
         const pinHolderDirection = new THREE.Vector3(0, 0, 1).normalize();
+        const pinHolderBottomByValve = new Map();
         let phoneWorldPosition = null;
 
         // Use geometry centers rather than object origins: several authored parts
@@ -341,6 +358,10 @@
         loadedModel.traverse((object) => {
           if (object.isMesh && getComponentKey(object.name) === 'phoneMesh') {
             phoneWorldPosition = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+          }
+          if (object.isMesh && getComponentKey(object.name) === 'pinholder') {
+            const holderBounds = new THREE.Box3().setFromObject(object);
+            pinHolderBottomByValve.set(getValveIndex(object.name), holderBounds.min.y);
           }
         });
 
@@ -357,6 +378,7 @@
           object.userData.componentName = object.name;
           object.userData.componentIndex = components.length;
           const componentKey = getComponentKey(object.name);
+          const valveIndex = getValveIndex(object.name);
           const originalPosition = object.position.clone();
           const originalWorldPosition = object.getWorldPosition(new THREE.Vector3());
           const explodedPosition = originalPosition.clone();
@@ -367,7 +389,24 @@
             if (componentKey === 'pinSkin') {
               worldOffset.addScaledVector(stackDirection, EXPLODE.pinSkinUp * explosionScale);
             } else if (componentKey === 'pin') {
-              worldOffset.addScaledVector(stackDirection, EXPLODE.pinUp * explosionScale);
+              // Numbered pins use their valve-set lift as their complete upward
+              // travel, keeping their lower edge beneath the stationary holder.
+              const requestedPinDistance = valveIndex === 1
+                ? EXPLODE.middleValveUp
+                : valveIndex === 2
+                  ? EXPLODE.lastValveUp
+                  : EXPLODE.pinUp;
+              let pinDistance = requestedPinDistance * explosionScale;
+
+              if (valveIndex > 0) {
+                const pinBottom = new THREE.Box3().setFromObject(object).min.y;
+                const holderBottom = pinHolderBottomByValve.get(valveIndex);
+                const maximumRise = holderBottom
+                  - pinBottom
+                  - EXPLODE.pinHolderClearance * explosionScale;
+                pinDistance = Math.min(pinDistance, Math.max(0, maximumRise));
+              }
+              worldOffset.addScaledVector(stackDirection, pinDistance);
             } else if (componentKey === 'pinPin') {
               worldOffset.addScaledVector(stackDirection, EXPLODE.pinPinUp * explosionScale);
             } else if (componentKey === 'skinSecuringPin') {
@@ -389,6 +428,17 @@
                 .addScaledVector(towardPhone, EXPLODE.foamHolderTowardPhone * explosionScale);
             } else if (componentKey === 'phoneMesh') {
               worldOffset.addScaledVector(worldUp, EXPLODE.phoneMeshUp * explosionScale);
+            }
+
+            // Lift each numbered valve as a five-part functional set. Its blue
+            // pinHolder, the trumpet body, and phone mesh are intentionally fixed.
+            if (componentKey !== 'pin' && MOVING_VALVE_PARTS.has(componentKey)) {
+              const valveLift = valveIndex === 1
+                ? EXPLODE.middleValveUp
+                : valveIndex === 2
+                  ? EXPLODE.lastValveUp
+                  : 0;
+              worldOffset.addScaledVector(stackDirection, valveLift * explosionScale);
             }
 
             const explodedWorldPosition = originalWorldPosition.clone().add(worldOffset);
